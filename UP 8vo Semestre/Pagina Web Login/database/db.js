@@ -9,10 +9,10 @@ db.pragma('journal_mode = WAL');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    username    TEXT UNIQUE NOT NULL,
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS login_lockouts (
@@ -20,6 +20,15 @@ db.exec(`
     failed_count INTEGER DEFAULT 0,
     last_failed  DATETIME,
     locked_until DATETIME
+  );
+
+  CREATE TABLE IF NOT EXISTS logs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    username   TEXT,
+    ip         TEXT,
+    message    TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);
 
@@ -56,10 +65,27 @@ const resetLockout = db.prepare(
   'DELETE FROM login_lockouts WHERE username = ?'
 );
 
+// ── Logs ──────────────────────────────────────────────────
+
+const insertLog = db.prepare(
+  'INSERT INTO logs (event_type, username, ip, message) VALUES (?, ?, ?, ?)'
+);
+
+const getLogs = db.prepare(
+  `SELECT * FROM logs ORDER BY created_at DESC LIMIT ?`
+);
+
+const getLogsByType = db.prepare(
+  `SELECT * FROM logs WHERE event_type = ? ORDER BY created_at DESC LIMIT ?`
+);
+
 module.exports = {
   getUserByUsername,
   createUser,
   getLockout,
   upsertFailedAttempt,
   resetLockout,
+  insertLog,
+  getLogs,
+  getLogsByType,
 };
