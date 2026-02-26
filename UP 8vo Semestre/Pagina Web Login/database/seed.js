@@ -10,7 +10,7 @@ const { createUser } = require('./db');
 const SALT_ROUNDS = 12;
 
 const testUsers = [
-  { username: 'admin',    password: 'Admin123!' },
+  { username: 'admin',    password: '1234' },
   { username: 'carlos',   password: 'Carlos456!' },
   { username: 'prueba',   password: 'Test789!' },
 ];
