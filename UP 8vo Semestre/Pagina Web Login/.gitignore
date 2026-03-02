@@ -12,6 +12,7 @@ database/login.db-wal
 # Logs
 *.log
 npm-debug.log*
+logs.json
 
 # Sistema operativo
 .DS_Store

@@ -1,6 +1,6 @@
 # Login Seguro — Hackeo Ético y Recuperación Ante Desastres
 
-Página de login minimalista (blanco y negro) con autenticación contra base de datos SQLite y bloqueo automático tras 5 intentos fallidos.
+Página de login minimalista (blanco y negro) con autenticación contra base de datos SQLite, **intentos ilimitados** y registro de actividad (logs).
 
 ---
 
@@ -9,11 +9,10 @@ Página de login minimalista (blanco y negro) con autenticación contra base de 
 - Diseño minimalista en blanco y negro.
 - Autenticación con usuario y contraseña almacenados en **SQLite**.
 - Contraseñas hasheadas con **bcrypt** (12 rondas de sal).
-- **Bloqueo de cuenta por 5 minutos** tras 5 intentos fallidos consecutivos.
-- Contador regresivo en pantalla durante el bloqueo.
-- Indicador de intentos restantes antes del bloqueo.
+- **Intentos de login ilimitados** (sin bloqueo por intentos fallidos).
 - Sesiones HTTP seguras con `express-session`.
 - Página de dashboard protegida (solo accesible con sesión activa).
+- **Logs de actividad**: cada login (éxito/fallo), cierre de sesión y peticiones HTTP se registran en consola, en SQLite, en un archivo **`logs.json`** y se muestran en el dashboard.
 
 ---
 
@@ -99,16 +98,17 @@ npm run dev
 Pagina Web Login/
 │
 ├── database/
-│   ├── db.js          # Conexión y consultas SQLite
+│   ├── db.js          # Conexión, consultas SQLite y tabla logs
 │   ├── seed.js        # Script para crear usuarios de prueba
 │   └── login.db       # Base de datos (generada automáticamente, no en Git)
 │
 ├── public/
 │   ├── index.html     # Página de login
-│   ├── dashboard.html # Página tras autenticación exitosa
+│   ├── dashboard.html # Dashboard + registro de actividad (logs)
 │   └── style.css      # Estilos minimalistas B&N
 │
-├── server.js          # Servidor Express + lógica de login y bloqueo
+├── server.js          # Servidor Express + lógica de login y logging
+├── logs.json          # Logs en JSON (generado en ejecución, no en Git)
 ├── package.json       # Dependencias y scripts npm
 ├── .env.example       # Plantilla de variables de entorno
 ├── .env               # Variables locales (NO subir a Git)
@@ -118,13 +118,15 @@ Pagina Web Login/
 
 ---
 
-## Lógica de bloqueo
+## Logs
 
-1. Cada intento fallido incrementa un contador en la tabla `login_lockouts`.
-2. Al llegar al **5.° intento fallido**, el campo `locked_until` se fija en `NOW + 5 minutos`.
-3. Mientras `locked_until > NOW`, todos los intentos de ese usuario son rechazados (HTTP 429).
-4. Pasados los 5 minutos el bloqueo se limpia automáticamente.
-5. Un **login exitoso** borra el registro de intentos del usuario.
+Los eventos se registran en **tres sitios**:
+
+1. **Consola** — Cada petición HTTP con **morgan** y cada evento de login/logout con timestamp, usuario e IP.
+2. **SQLite** — Tabla `logs` con `event_type`, `username`, `ip`, `message`, `created_at`. Se consultan vía **GET /api/logs** (requiere sesión). Parámetros: `?limit=100` (máx. 500), `?type=login_success` | `login_failed` | `logout`.
+3. **Archivo `logs.json`** — Array JSON con las últimas 2000 entradas (timestamp, event_type, username, ip, message). Se crea/actualiza en la raíz del proyecto; está en `.gitignore`.
+
+En el **dashboard**, tras iniciar sesión, la sección **«Registro de actividad»** muestra la tabla de logs con filtro por tipo y botón **Actualizar**.
 
 ---
 
@@ -157,7 +159,7 @@ git commit -m "feat: login seguro con bloqueo por intentos fallidos"
 git push
 ```
 
-> **Importante:** el archivo `.env` y `database/login.db` están en `.gitignore` y **no se subirán**. Eso es correcto: cada persona que clone el repo debe ejecutar `cp .env.example .env` y `npm run seed` por su cuenta.
+> **Importante:** `.env`, `database/login.db` y `logs.json` están en `.gitignore` y **no se subirán**. Cada persona que clone el repo debe ejecutar `cp .env.example .env` y `npm run seed` por su cuenta.
 
 ---
 
@@ -170,6 +172,7 @@ git push
 | `better-sqlite3` | Base de datos SQLite (síncrona, sin servidor) |
 | `bcryptjs` | Hash seguro de contraseñas |
 | `dotenv` | Carga de variables de entorno desde `.env` |
+| `morgan` | Log de peticiones HTTP en consola |
 | `nodemon` *(dev)* | Reinicio automático en desarrollo |
 
 ---
@@ -211,7 +214,7 @@ El `package.json` ya incluye `"start": "node server.js"`, que es lo que Render u
    | Campo | Valor |
    |-------|-------|
    | **Name** | `login-seguro` (o el que quieras) |
-   | **Root Directory** | `UP 8vo Semestre/Hackeo Ético y Recuperación Ante Desastres/Pagina Web Login` |
+   | **Root Directory** | `UP 8vo Semestre/Pagina Web Login` |
    | **Environment** | `Node` |
    | **Build Command** | `npm install && npm run seed` |
    | **Start Command** | `npm start` |
@@ -245,4 +248,4 @@ https://login-seguro.onrender.com
 > - Cambiar `SESSION_SECRET` por un valor aleatorio de 64+ caracteres.
 > - Considerar una base de datos más robusta (PostgreSQL, MySQL).
 > - Agregar protección CSRF.
-> - Implementar rate-limiting a nivel de IP además del bloqueo por usuario.
+> - Valorar rate-limiting o bloqueo por intentos si se requiere limitar ataques de fuerza bruta.

@@ -3,13 +3,11 @@ const express  = require('express');
 const session  = require('express-session');
 const bcrypt   = require('bcryptjs');
 const path     = require('path');
+const fs       = require('fs');
 const morgan   = require('morgan');
 
 const {
   getUserByUsername,
-  getLockout,
-  upsertFailedAttempt,
-  resetLockout,
   insertLog,
   getLogs,
   getLogsByType,
@@ -17,6 +15,9 @@ const {
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
+
+const LOGS_JSON_PATH = path.join(__dirname, 'logs.json');
+const MAX_LOGS_IN_FILE = 2000;
 
 // ── Helper: obtener IP real (considera proxies como Render) ──
 function getIP(req) {
@@ -27,14 +28,27 @@ function getIP(req) {
   );
 }
 
-// ── Helper: escribir log a consola y a SQLite ─────────────
+// ── Helper: escribir log a consola, SQLite y archivo JSON ──
 function log(eventType, username, ip, message) {
   const ts = new Date().toISOString();
+  const entry = { timestamp: ts, event_type: eventType, username: username ?? null, ip: ip ?? null, message };
   console.log(`[${ts}] [${eventType}] user=${username ?? '-'} ip=${ip ?? '-'} | ${message}`);
   try {
     insertLog.run(eventType, username ?? null, ip ?? null, message);
   } catch (e) {
     console.error('[LOG_ERROR]', e.message);
+  }
+  try {
+    let list = [];
+    if (fs.existsSync(LOGS_JSON_PATH)) {
+      const raw = fs.readFileSync(LOGS_JSON_PATH, 'utf8');
+      try { list = JSON.parse(raw); } catch (_) { list = []; }
+    }
+    list.unshift(entry);
+    list = list.slice(0, MAX_LOGS_IN_FILE);
+    fs.writeFileSync(LOGS_JSON_PATH, JSON.stringify(list, null, 2), 'utf8');
+  } catch (e) {
+    console.error('[LOG_FILE_ERROR]', e.message);
   }
 }
 
@@ -74,92 +88,28 @@ app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
-/** POST /login  →  autenticación */
+/** POST /login  →  autenticación (sin bloqueo por intentos) */
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   const ip = getIP(req);
 
-  // Validación básica de campos vacíos
   if (!username || !password) {
     return res.status(400).json({ error: 'Por favor completa todos los campos.' });
   }
 
   const usernameClean = username.trim().toLowerCase();
-
-  // ── 1. Verificar bloqueo ──────────────────────────────
-  const lockout = getLockout.get(usernameClean);
-
-  if (lockout && lockout.locked_until) {
-    const lockedUntil = new Date(lockout.locked_until + ' UTC');
-    const now         = new Date();
-
-    if (now < lockedUntil) {
-      const diffMs      = lockedUntil - now;
-      const diffMinutes = Math.ceil(diffMs / 60000);
-      const diffSeconds = Math.ceil((diffMs % 60000) / 1000);
-
-      log('login_blocked', usernameClean, ip,
-        `Intento mientras cuenta bloqueada. Desbloqueo en ${diffMinutes}m ${diffSeconds}s`);
-
-      return res.status(429).json({
-        error: `Cuenta bloqueada por demasiados intentos fallidos. Inténtalo en ${diffMinutes}m ${diffSeconds}s.`,
-        locked: true,
-        lockedUntil: lockedUntil.toISOString(),
-      });
-    } else {
-      // El bloqueo expiró: limpiar
-      resetLockout.run(usernameClean);
-      log('lockout_expired', usernameClean, ip, 'Bloqueo expirado, contador reiniciado');
-    }
-  }
-
-  // ── 2. Buscar usuario en BD ───────────────────────────
   const user = getUserByUsername.get(usernameClean);
-
-  // ── 3. Verificar contraseña ───────────────────────────
   const passwordMatch = user ? await bcrypt.compare(password, user.password_hash) : false;
 
   if (!user || !passwordMatch) {
-    upsertFailedAttempt.run(usernameClean);
-
-    const updated   = getLockout.get(usernameClean);
-    const remaining = Math.max(0, 5 - (updated ? updated.failed_count : 1));
-
-    if (updated && updated.locked_until) {
-      const lockedUntil = new Date(updated.locked_until + ' UTC');
-      const diffMs      = lockedUntil - new Date();
-      const diffMinutes = Math.ceil(diffMs / 60000);
-      const diffSeconds = Math.ceil((diffMs % 60000) / 1000);
-
-      log('account_locked', usernameClean, ip,
-        `Cuenta bloqueada tras ${updated.failed_count} intentos fallidos. Desbloqueo en ${diffMinutes}m ${diffSeconds}s`);
-
-      return res.status(429).json({
-        error: `Cuenta bloqueada por demasiados intentos fallidos. Inténtalo en ${diffMinutes}m ${diffSeconds}s.`,
-        locked: true,
-        lockedUntil: lockedUntil.toISOString(),
-      });
-    }
-
-    log('login_failed', usernameClean, ip,
-      `Contraseña incorrecta. Intentos restantes: ${remaining}`);
-
+    log('login_failed', usernameClean, ip, 'Usuario o contraseña incorrectos');
     return res.status(401).json({
       error: 'El usuario o contraseña son incorrectos.',
-      attemptsLeft: remaining,
     });
   }
 
-  // ── 4. Login exitoso ──────────────────────────────────
-  resetLockout.run(usernameClean);
-
-  req.session.user = {
-    id:       user.id,
-    username: user.username,
-  };
-
+  req.session.user = { id: user.id, username: user.username };
   log('login_success', usernameClean, ip, 'Autenticación exitosa');
-
   return res.json({ success: true, redirect: '/dashboard' });
 });
 
@@ -184,9 +134,8 @@ app.get('/api/me', (req, res) => {
 /**
  * GET /api/logs  →  consulta de logs (requiere sesión activa)
  * Query params:
- *   - limit  : número de registros a devolver (default 100, max 500)
- *   - type   : filtrar por event_type (login_success, login_failed, account_locked,
- *              login_blocked, lockout_expired, logout)
+ *   - limit  : número de registros (default 100, max 500)
+ *   - type   : filtrar por event_type (login_success, login_failed, logout)
  */
 app.get('/api/logs', (req, res) => {
   if (!req.session.user) {

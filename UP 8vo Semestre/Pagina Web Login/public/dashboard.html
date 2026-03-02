@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/style.css" />
 </head>
-<body>
+<body class="dashboard-page">
 
   <div class="dashboard-card">
     <div class="icon">✓</div>
@@ -24,17 +24,85 @@
     </form>
   </div>
 
+  <section class="logs-section">
+    <div class="logs-header">
+      <h2>Registro de actividad</h2>
+      <div class="logs-actions">
+        <select id="filter-type">
+          <option value="">Todos</option>
+          <option value="login_success">Login exitoso</option>
+          <option value="login_failed">Login fallido</option>
+          <option value="logout">Cierre de sesión</option>
+        </select>
+        <button type="button" class="btn-refresh" id="btn-refresh">Actualizar</button>
+      </div>
+    </div>
+    <div class="logs-table-wrap">
+      <table class="logs-table">
+        <thead>
+          <tr>
+            <th>Fecha y hora</th>
+            <th>Evento</th>
+            <th>Usuario</th>
+            <th>IP</th>
+            <th>Mensaje</th>
+          </tr>
+        </thead>
+        <tbody id="logs-body">
+          <tr><td colspan="5" class="logs-loading">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
   <script>
+    const welcomeEl = document.getElementById('welcome-user');
+    const logsBody = document.getElementById('logs-body');
+    const btnRefresh = document.getElementById('btn-refresh');
+    const filterType = document.getElementById('filter-type');
+
     fetch('/api/me')
       .then(r => r.json())
       .then(data => {
-        if (data.username) {
-          document.getElementById('welcome-user').textContent = data.username;
-        }
+        if (data.username) welcomeEl.textContent = data.username;
       })
-      .catch(() => {
-        window.location.href = '/';
-      });
+      .catch(() => { window.location.href = '/'; });
+
+    function loadLogs() {
+      logsBody.innerHTML = '<tr><td colspan="5" class="logs-loading">Cargando…</td></tr>';
+      const type = filterType.value || '';
+      const url = type ? '/api/logs?limit=200&type=' + encodeURIComponent(type) : '/api/logs?limit=200';
+      fetch(url, { credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(data => {
+          if (data.logs && data.logs.length) {
+            logsBody.innerHTML = data.logs.map(l => `
+              <tr>
+                <td>${escapeHtml(l.created_at)}</td>
+                <td><span class="log-type log-type-${l.event_type}">${escapeHtml(l.event_type)}</span></td>
+                <td>${escapeHtml(l.username || '—')}</td>
+                <td>${escapeHtml(l.ip || '—')}</td>
+                <td>${escapeHtml(l.message || '')}</td>
+              </tr>
+            `).join('');
+          } else {
+            logsBody.innerHTML = '<tr><td colspan="5" class="logs-empty">No hay registros</td></tr>';
+          }
+        })
+        .catch(() => {
+          logsBody.innerHTML = '<tr><td colspan="5" class="logs-error">Error al cargar</td></tr>';
+        });
+    }
+
+    function escapeHtml(s) {
+      const div = document.createElement('div');
+      div.textContent = s;
+      return div.innerHTML;
+    }
+
+    btnRefresh.addEventListener('click', loadLogs);
+    filterType.addEventListener('change', loadLogs);
+    loadLogs();
   </script>
 
 </body>

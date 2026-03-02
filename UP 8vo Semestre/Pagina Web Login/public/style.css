@@ -199,12 +199,19 @@ input:disabled {
 }
 
 /* ── Dashboard ──────────────────────────────────────────── */
+body.dashboard-page {
+  flex-direction: column;
+  align-items: center;
+  padding-bottom: 3rem;
+}
+
 .dashboard-card {
   width: 100%;
   max-width: 480px;
   border: 1px solid var(--gray-200);
   padding: 2.5rem 2rem;
   text-align: center;
+  flex-shrink: 0;
 }
 
 .dashboard-card .icon {
@@ -248,3 +255,101 @@ input:disabled {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
+
+/* ── Logs en dashboard ───────────────────────────────────── */
+.logs-section {
+  width: 100%;
+  max-width: 900px;
+  margin-top: 2.5rem;
+  border: 1px solid var(--gray-200);
+  padding: 1.25rem 1.5rem;
+  background: var(--white);
+}
+
+.logs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.logs-header h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--black);
+}
+
+.logs-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.logs-actions select {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  background: var(--white);
+}
+
+.btn-refresh {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--black);
+  border-radius: var(--radius);
+  background: transparent;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.btn-refresh:hover {
+  background: var(--black);
+  color: var(--white);
+}
+
+.logs-table-wrap {
+  overflow-x: auto;
+}
+
+.logs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.logs-table th,
+.logs-table td {
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.logs-table th {
+  font-weight: 600;
+  color: var(--gray-600);
+  background: var(--gray-100);
+}
+
+.log-type {
+  display: inline-block;
+  padding: 0.2rem 0.45rem;
+  border-radius: var(--radius);
+  font-weight: 500;
+}
+
+.log-type-login_success { background: #dcfce7; color: var(--success); }
+.log-type-login_failed  { background: #fef2f2; color: var(--error); }
+.log-type-logout       { background: var(--gray-200); color: var(--gray-600); }
+
+.logs-loading,
+.logs-empty,
+.logs-error {
+  color: var(--gray-400);
+  text-align: center;
+  padding: 1rem !important;
+}
+
+.logs-error { color: var(--error); }
