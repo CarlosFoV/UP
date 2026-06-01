@@ -1,18 +1,30 @@
 # Login Seguro — Hackeo Ético y Recuperación Ante Desastres
 
-Página de login minimalista (blanco y negro) con autenticación contra base de datos SQLite, **intentos ilimitados** y registro de actividad (logs).
+Página de login minimalista (blanco y negro) con autenticación SQLite, **protección contra ataques comunes** y registro de actividad (logs).
+
+## Protecciones activas
+
+| Ataque | Qué hace |
+|--------|----------|
+| **Fuerza bruta** | Lockout: 5 intentos → bloqueo 5 min + máx. 30 logins por IP / 15 min |
+| **Robo de contraseña/sesión** | Cookies `httpOnly`, `sameSite: strict`, `secure` en producción; `helmet`; contraseñas solo con bcrypt; nunca se guardan en logs |
+| **Inyección SQL** | Solo consultas preparadas en SQLite + validación en `/api/logs` |
+| **Inyección LDAP** | Usuario solo `[a-zA-Z0-9_]` + `ldap-escape` |
+| **XSS** | Sanitización con `xss` en body/query + CSP con `helmet` + escape en el dashboard |
 
 ---
 
 ## Características
 
 - Diseño minimalista en blanco y negro.
-- Autenticación con usuario y contraseña almacenados en **SQLite**.
+- Autenticación con usuario y contraseña almacenados en **SQLite** (consultas parametrizadas).
 - Contraseñas hasheadas con **bcrypt** (12 rondas de sal).
-- **Intentos de login ilimitados** (sin bloqueo por intentos fallidos).
-- Sesiones HTTP seguras con `express-session`.
-- Página de dashboard protegida (solo accesible con sesión activa).
-- **Logs de actividad**: cada login (éxito/fallo), cierre de sesión y peticiones HTTP se registran en consola, en SQLite, en un archivo **`logs.json`** y se muestran en el dashboard.
+- **Bloqueo de cuenta (lockout)** tras 5 intentos fallidos (5 minutos, configurable en `.env`).
+- **Rate limiting** por IP en login y en el resto de rutas (`express-rate-limit`).
+- **Cabeceras HTTP seguras** (`helmet`), cookies `httpOnly` / `sameSite` / `secure` en producción.
+- Validación y sanitización de entradas (`express-validator`, `xss`, `ldap-escape`, `hpp`).
+- Sesiones HTTP con `express-session`.
+- Dashboard protegido con **registro de actividad** (consola, SQLite, `logs.json`).
 
 ---
 
@@ -21,9 +33,19 @@ Página de login minimalista (blanco y negro) con autenticación contra base de 
 | Herramienta | Versión mínima |
 |-------------|---------------|
 | [Node.js](https://nodejs.org/) | 18 LTS o superior |
-| npm | viene con Node.js |
+| [pnpm](https://pnpm.io/installation) | 9 o superior |
 
-> **Windows:** Se recomienda usar la terminal **PowerShell** o **Git Bash**.
+> **Windows:** Se recomienda usar la terminal **PowerShell** o **Git Bash**.  
+> Este proyecto usa **pnpm** exclusivamente (`npm install` está bloqueado vía `only-allow`).
+
+### Instalar pnpm (solo la primera vez)
+
+```bash
+corepack enable
+corepack prepare pnpm@9.15.9 --activate
+```
+
+Si `corepack` falla por permisos, instálalo globalmente: `npm install -g pnpm@9`
 
 ---
 
@@ -39,7 +61,7 @@ cd "UP 8vo Semestre/Hackeo Ético y Recuperación Ante Desastres/Pagina Web Logi
 ### 2. Instalar dependencias
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### 3. Configurar variables de entorno
@@ -59,7 +81,7 @@ SESSION_SECRET=mi-clave-super-secreta-123
 ### 4. Crear usuarios de prueba en la base de datos
 
 ```bash
-npm run seed
+pnpm run seed
 ```
 
 Este comando crea automáticamente los siguientes usuarios:
@@ -75,7 +97,7 @@ Este comando crea automáticamente los siguientes usuarios:
 ### 5. Iniciar el servidor
 
 ```bash
-npm start
+pnpm start
 ```
 
 Abre tu navegador en **http://localhost:3000**
@@ -87,7 +109,7 @@ Abre tu navegador en **http://localhost:3000**
 Instala nodemon (ya incluido como devDependency) y usa:
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 ---
@@ -107,9 +129,13 @@ Pagina Web Login/
 │   ├── dashboard.html # Dashboard + registro de actividad (logs)
 │   └── style.css      # Estilos minimalistas B&N
 │
-├── server.js          # Servidor Express + lógica de login y logging
+├── middleware/
+│   └── security.js    # Validación, XSS, LDAP, constantes de lockout
+├── server.js          # Servidor Express + seguridad + login + logging
 ├── logs.json          # Logs en JSON (generado en ejecución, no en Git)
-├── package.json       # Dependencias y scripts npm
+├── package.json       # Dependencias y scripts (pnpm)
+├── pnpm-lock.yaml     # Lockfile de pnpm (sí se sube a Git)
+├── .npmrc             # Configuración de pnpm
 ├── .env.example       # Plantilla de variables de entorno
 ├── .env               # Variables locales (NO subir a Git)
 ├── .gitignore
@@ -127,6 +153,27 @@ Los eventos se registran en **tres sitios**:
 3. **Archivo `logs.json`** — Array JSON con las últimas 2000 entradas (timestamp, event_type, username, ip, message). Se crea/actualiza en la raíz del proyecto; está en `.gitignore`.
 
 En el **dashboard**, tras iniciar sesión, la sección **«Registro de actividad»** muestra la tabla de logs con filtro por tipo y botón **Actualizar**.
+
+---
+
+## Seguridad (bibliotecas y medidas)
+
+| Amenaza | Medida | Biblioteca / técnica |
+|---------|--------|----------------------|
+| **Fuerza bruta** | Lockout tras 5 fallos (5 min) + límite 30 intentos/login por IP cada 15 min | `login_lockouts` en SQLite + `express-rate-limit` |
+| **Robo de contraseña / sesión** | Cookies `httpOnly`, `sameSite: strict`, `secure` en producción; cabeceras seguras; contraseñas solo en bcrypt; nunca se registran en logs | `helmet`, `express-session`, `bcryptjs` |
+| **Inyección SQL** | Solo consultas **preparadas** (`?`); validación de usuario y parámetros de `/api/logs` | `better-sqlite3`, `express-validator` |
+| **Inyección LDAP** | Usuario restringido a `[a-zA-Z0-9_]` + escape LDAP del valor | `ldap-escape`, `express-validator` |
+| **XSS** | Sanitización de `body`/`query`/`params`; CSP con `helmet`; escape en el dashboard al renderizar logs | `xss`, `helmet` |
+| **Otros** | Anti HTTP Parameter Pollution; límite global 200 req/15 min por IP | `hpp`, `express-rate-limit` |
+
+Variables opcionales en `.env`:
+
+```env
+LOCKOUT_MAX_ATTEMPTS=5
+LOCKOUT_MINUTES=5
+NODE_ENV=production   # en Render, para cookies secure
+```
 
 ---
 
@@ -159,7 +206,7 @@ git commit -m "feat: login seguro con bloqueo por intentos fallidos"
 git push
 ```
 
-> **Importante:** `.env`, `database/login.db` y `logs.json` están en `.gitignore` y **no se subirán**. Cada persona que clone el repo debe ejecutar `cp .env.example .env` y `npm run seed` por su cuenta.
+> **Importante:** `.env`, `database/login.db` y `logs.json` están en `.gitignore` y **no se subirán**. Cada persona que clone el repo debe ejecutar `cp .env.example .env` y `pnpm run seed` por su cuenta.
 
 ---
 
@@ -173,6 +220,12 @@ git push
 | `bcryptjs` | Hash seguro de contraseñas |
 | `dotenv` | Carga de variables de entorno desde `.env` |
 | `morgan` | Log de peticiones HTTP en consola |
+| `helmet` | Cabeceras HTTP seguras (CSP, etc.) |
+| `express-rate-limit` | Límite de peticiones por IP |
+| `express-validator` | Validación de entradas |
+| `hpp` | Protección HTTP Parameter Pollution |
+| `xss` | Sanitización anti-XSS en el servidor |
+| `ldap-escape` | Escape de caracteres LDAP en el usuario |
 | `nodemon` *(dev)* | Reinicio automático en desarrollo |
 
 ---
@@ -216,8 +269,8 @@ El `package.json` ya incluye `"start": "node server.js"`, que es lo que Render u
    | **Name** | `login-seguro` (o el que quieras) |
    | **Root Directory** | `UP 8vo Semestre/Pagina Web Login` |
    | **Environment** | `Node` |
-   | **Build Command** | `npm install && npm run seed` |
-   | **Start Command** | `npm start` |
+   | **Build Command** | `pnpm install && pnpm run seed` |
+   | **Start Command** | `pnpm start` |
 
 5. En la sección **"Environment Variables"** agrega:
 

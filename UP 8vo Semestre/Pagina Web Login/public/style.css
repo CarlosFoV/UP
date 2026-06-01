@@ -342,6 +342,9 @@ body.dashboard-page {
 
 .log-type-login_success { background: #dcfce7; color: var(--success); }
 .log-type-login_failed  { background: #fef2f2; color: var(--error); }
+.log-type-account_locked,
+.log-type-login_blocked { background: #fffbeb; color: var(--warning); }
+.log-type-lockout_expired { background: var(--gray-200); color: var(--gray-600); }
 .log-type-logout       { background: var(--gray-200); color: var(--gray-600); }
 
 .logs-loading,

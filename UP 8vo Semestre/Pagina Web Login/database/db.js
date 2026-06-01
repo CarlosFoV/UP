@@ -1,5 +1,9 @@
+require('dotenv').config();
 const Database = require('better-sqlite3');
 const path = require('path');
+
+const LOCKOUT_THRESHOLD = parseInt(process.env.LOCKOUT_MAX_ATTEMPTS, 10) || 5;
+const LOCKOUT_MINUTES = parseInt(process.env.LOCKOUT_MINUTES, 10) || 5;
 
 const DB_PATH = path.join(__dirname, 'login.db');
 const db = new Database(DB_PATH);
@@ -55,8 +59,8 @@ const upsertFailedAttempt = db.prepare(`
     failed_count = failed_count + 1,
     last_failed  = CURRENT_TIMESTAMP,
     locked_until = CASE
-      WHEN failed_count + 1 >= 5
-        THEN datetime(CURRENT_TIMESTAMP, '+5 minutes')
+      WHEN failed_count + 1 >= ${LOCKOUT_THRESHOLD}
+        THEN datetime(CURRENT_TIMESTAMP, '+${LOCKOUT_MINUTES} minutes')
       ELSE NULL
     END
 `);

@@ -1,5 +1,6 @@
 # Dependencias
 node_modules/
+package-lock.json
 
 # Base de datos SQLite (generada localmente)
 database/login.db
